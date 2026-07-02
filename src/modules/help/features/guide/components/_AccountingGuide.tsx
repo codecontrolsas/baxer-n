@@ -111,8 +111,16 @@ export function _AccountingGuide() {
             <strong>próximo ejercicio</strong>. Si deshabilitas una cuenta de
             sumatoria, la baja se aplica <strong>en cascada</strong> a sus hijas.
           </p>
+          <p className="mt-2">
+            <strong>Cargar Plan Modelo:</strong> si tu empresa todavía no tiene
+            cuentas, aparece el botón <strong>Cargar Plan Modelo</strong> que crea
+            un plan de cuentas completo y predefinido (Activo, Pasivo, Patrimonio
+            Neto e Ingresos/Gastos) con su jerarquía y sus cuentas imputables listas
+            para usar. Es opcional y luego podés editarlo o ampliarlo. Solo está
+            disponible mientras el plan esté vacío.
+          </p>
           <p className="text-sm text-muted-foreground mt-2">
-            Puedes <strong>importar</strong> un plan de cuentas desde Excel o{' '}
+            También puedes <strong>importar</strong> un plan de cuentas desde Excel o{' '}
             <strong>exportar</strong> el actual.
           </p>
         </CardContent>

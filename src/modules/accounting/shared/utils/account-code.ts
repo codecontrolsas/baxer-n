@@ -74,6 +74,34 @@ export function validateAccountCodeFormat(code: string): string {
 }
 
 /**
+ * Deriva el código del padre a partir de un código canónico `A.B.C/DD/EE`,
+ * poniendo a 0 el último segmento no-cero. Devuelve `null` si la cuenta es raíz
+ * (solo el primer segmento es distinto de 0).
+ *
+ * Ej.: `1.1.1/01/01` -> `1.1.1/01/00` -> `1.1.1/00/00` -> `1.1.0/00/00` -> `1.0.0/00/00` -> null
+ */
+export function getParentCode(code: string): string | null {
+  const match = code.trim().match(/^(\d+)\.(\d+)\.(\d+)\/(\d+)\/(\d+)$/);
+  if (!match) return null;
+
+  const segments = [match[1], match[2], match[3], match[4], match[5]].map((s) => parseInt(s, 10));
+  let lastNonZero = -1;
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i] !== 0) {
+      lastNonZero = i;
+      break;
+    }
+  }
+
+  // last <= 0: solo el primer segmento es distinto de 0 -> es raíz.
+  if (lastNonZero <= 0) return null;
+
+  segments[lastNonZero] = 0;
+  const [a, b, c, d, e] = segments;
+  return `${a}.${b}.${c}/${String(d).padStart(2, '0')}/${String(e).padStart(2, '0')}`;
+}
+
+/**
  * Normaliza un arreglo de segmentos numéricos a longitud fija, rellenando con 0.
  */
 function normalizeSegments(segments: string[], length: number, originalCode: string): number[] {

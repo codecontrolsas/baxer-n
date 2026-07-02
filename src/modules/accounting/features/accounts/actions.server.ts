@@ -13,9 +13,16 @@ import {
   validateAccountNature,
   validateAccountParent,
   validateAccountParentSameType,
+  natureForType,
 } from '../../shared/validators';
-import { validateAccountCodeFormat, AccountCodeFormatError } from '../../shared/utils/account-code';
+import {
+  validateAccountCodeFormat,
+  AccountCodeFormatError,
+  getParentCode,
+} from '../../shared/utils/account-code';
 import { getCurrentFiscalYear, getNextFiscalYear } from '../../shared/utils/fiscal-year';
+import { MODEL_CHART_OF_ACCOUNTS } from './data/model-chart-of-accounts';
+import { randomUUID } from 'crypto';
 
 /**
  * Normaliza el código con `validateAccountCodeFormat` traduciendo el error de
@@ -476,6 +483,72 @@ export async function disableAccount(
     };
   } catch (error) {
     logger.error('Error al deshabilitar cuenta', { data: { error, accountId, userId } });
+    throw error;
+  }
+}
+
+/**
+ * Carga el Plan de Cuentas Modelo (Ticket #382) en una empresa que aún no tiene
+ * cuentas. Crea el árbol completo (277 cuentas) en una transacción, derivando el
+ * padre de cada cuenta a partir de su código. Idempotente por diseño: solo se
+ * permite cuando la empresa no tiene ninguna cuenta.
+ */
+export async function loadModelChartOfAccounts(companyId: string): Promise<{ created: number }> {
+  const userId = await getCurrentUserId();
+  if (!userId) throw new Error('No autenticado');
+  await checkPermission('accounting.accounts', 'create', { redirect: true });
+
+  const EMPTY_ONLY_ERROR =
+    'El plan de cuentas modelo solo puede cargarse cuando la empresa no tiene cuentas.';
+
+  try {
+    const existingCount = await prisma.account.count({ where: { companyId } });
+    if (existingCount > 0) {
+      throw new Error(EMPTY_ONLY_ERROR);
+    }
+
+    // Pre-generar los ids para poder enlazar padres sin round-trips a la base.
+    const idByCode = new Map<string, string>();
+    for (const account of MODEL_CHART_OF_ACCOUNTS) {
+      idByCode.set(account.code, randomUUID());
+    }
+
+    // Ordenar por código ascendente => los padres se insertan antes que las hijas.
+    const data = MODEL_CHART_OF_ACCOUNTS.map((account) => {
+      const parentCode = getParentCode(account.code);
+      const parentId = parentCode ? idByCode.get(parentCode) ?? null : null;
+      return {
+        id: idByCode.get(account.code)!,
+        companyId,
+        code: account.code,
+        name: account.name,
+        type: account.type,
+        nature: natureForType(account.type),
+        isLeaf: account.isLeaf,
+        parentId,
+      };
+    }).sort((a, b) => a.code.localeCompare(b.code));
+
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // Recheck dentro de la transacción para evitar carreras.
+        const count = await tx.account.count({ where: { companyId } });
+        if (count > 0) {
+          throw new Error(EMPTY_ONLY_ERROR);
+        }
+        return tx.account.createMany({ data });
+      },
+      { timeout: 30000, maxWait: 10000 }
+    );
+
+    logger.info('Plan de cuentas modelo cargado', {
+      data: { companyId, userId, created: result.count },
+    });
+    revalidateAccountingRoutes(companyId);
+
+    return { created: result.count };
+  } catch (error) {
+    logger.error('Error al cargar plan de cuentas modelo', { data: { error, companyId, userId } });
     throw error;
   }
 }

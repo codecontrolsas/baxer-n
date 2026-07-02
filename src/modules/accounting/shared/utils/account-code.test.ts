@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateAccountCodeFormat, AccountCodeFormatError } from './account-code';
+import { validateAccountCodeFormat, getParentCode, AccountCodeFormatError } from './account-code';
 
 describe('validateAccountCodeFormat', () => {
   it('normaliza un código jerárquico completo rellenando los auxiliares', () => {
@@ -42,5 +42,23 @@ describe('validateAccountCodeFormat', () => {
 
   it('rechaza demasiados grupos', () => {
     expect(() => validateAccountCodeFormat('1.1.1/2/3/4')).toThrow(AccountCodeFormatError);
+  });
+});
+
+describe('getParentCode', () => {
+  it('deriva el padre poniendo a 0 el último segmento no-cero', () => {
+    expect(getParentCode('1.1.1/01/01')).toBe('1.1.1/01/00');
+    expect(getParentCode('1.1.1/01/00')).toBe('1.1.1/00/00');
+    expect(getParentCode('1.1.1/00/00')).toBe('1.1.0/00/00');
+    expect(getParentCode('1.1.0/00/00')).toBe('1.0.0/00/00');
+  });
+
+  it('devuelve null para una cuenta raíz (solo el primer segmento)', () => {
+    expect(getParentCode('1.0.0/00/00')).toBeNull();
+    expect(getParentCode('4.0.0/00/00')).toBeNull();
+  });
+
+  it('devuelve null para un código con formato inválido', () => {
+    expect(getParentCode('no-es-un-codigo')).toBeNull();
   });
 });

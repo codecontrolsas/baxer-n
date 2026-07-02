@@ -1,6 +1,5 @@
 import { AccountNature, AccountType } from '@/generated/prisma/enums';
 import { prisma } from '@/shared/lib/prisma';
-import { logger } from '@/shared/lib/logger';
 
 /**
  * Valida que el código de cuenta sea único para la empresa
@@ -74,18 +73,25 @@ export async function validateAccountParentSameType(
 }
 
 /**
- * Valida que la naturaleza de la cuenta sea correcta según su tipo
+ * Naturaleza (saldo) que corresponde a cada tipo de cuenta.
+ * ASSET/EXPENSE -> DEBIT (deudor); LIABILITY/EQUITY/REVENUE -> CREDIT (acreedor).
  */
-export function validateAccountNature(type: AccountType, nature: AccountNature) {
-  const validNatures: Record<AccountType, AccountNature> = {
+export function natureForType(type: AccountType): AccountNature {
+  const map: Record<AccountType, AccountNature> = {
     [AccountType.ASSET]: AccountNature.DEBIT,
     [AccountType.LIABILITY]: AccountNature.CREDIT,
     [AccountType.EQUITY]: AccountNature.CREDIT,
     [AccountType.REVENUE]: AccountNature.CREDIT,
     [AccountType.EXPENSE]: AccountNature.DEBIT,
   };
+  return map[type];
+}
 
-  if (validNatures[type] !== nature) {
+/**
+ * Valida que la naturaleza de la cuenta sea correcta según su tipo
+ */
+export function validateAccountNature(type: AccountType, nature: AccountNature) {
+  if (natureForType(type) !== nature) {
     throw new Error(`La naturaleza ${nature} no es válida para una cuenta de tipo ${type}`);
   }
 }

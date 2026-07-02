@@ -7,6 +7,7 @@ import { getCurrentFiscalYear } from '../../shared/utils/fiscal-year';
 import { _AccountsTable } from './components/_AccountsTable';
 import { _CreateAccountButton } from './components/_CreateAccountButton';
 import { _ImportExportButtons } from './components/_ImportExportButtons';
+import { _LoadModelChartButton } from './components/_LoadModelChartButton';
 
 import { getActiveCompanyId } from '@/shared/lib/company';
 
@@ -48,6 +49,11 @@ async function AccountsListContent({ companyId }: { companyId: string }) {
           </p>
         </div>
         <div className="flex gap-2">
+          {accounts.length === 0 && (
+            <PermissionGuard module="accounting.accounts" action="create">
+              <_LoadModelChartButton companyId={companyId} />
+            </PermissionGuard>
+          )}
           <_ImportExportButtons companyId={companyId} />
           <PermissionGuard module="accounting.accounts" action="create">
             <_CreateAccountButton companyId={companyId} />
