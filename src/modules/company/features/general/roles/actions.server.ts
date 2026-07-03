@@ -7,6 +7,7 @@ import { prisma } from '@/shared/lib/prisma';
 import { logger } from '@/shared/lib/logger';
 import { getActiveCompanyId } from '@/shared/lib/company';
 import { checkPermission, createAuditLog, AUDIT_ACTIONS, MODULES, ACTIONS } from '@/shared/lib/permissions';
+import { HIDDEN_MODULES } from '@/shared/lib/modules/constants';
 import type { DataTableSearchParams } from '@/shared/components/common/DataTable';
 import {
   parseSearchParams,
@@ -257,11 +258,41 @@ export async function getPermissionsConfig() {
     },
   ];
 
+  // Ocultar los permisos de los módulos ocultos en este despliegue (TSK-403 / TSK-377:
+  // Empleados, Equipos, Documentos). Se filtran esos módulos y sus submódulos, y se
+  // descartan los grupos que queden vacíos.
+  const isHiddenModule = (key: string): boolean =>
+    HIDDEN_MODULES.some((hidden) => key === hidden || key.startsWith(`${hidden}.`));
+
+  const visibleModuleGroups = moduleGroups
+    .map((group) => ({ ...group, modules: group.modules.filter((m) => !isHiddenModule(m.key)) }))
+    .filter((group) => group.modules.length > 0);
+
   return {
     actions,
-    moduleGroups,
+    moduleGroups: visibleModuleGroups,
     availableActions: Object.values(ACTIONS),
   };
+}
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Elimina pares (module, actionId) duplicados para respetar el unique
+ * (role_id, module, action_id) de company_role_permissions.
+ */
+function dedupePermissions(
+  permissions: Array<{ module: string; actionId: string }>
+): Array<{ module: string; actionId: string }> {
+  const seen = new Set<string>();
+  return permissions.filter((p) => {
+    const key = `${p.module}::${p.actionId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // ============================================
@@ -318,7 +349,7 @@ export async function createRole(input: CreateRoleInput) {
         isDefault: input.isDefault ?? false,
         isSystem: false,
         permissions: {
-          create: input.permissions.map((p) => ({
+          create: dedupePermissions(input.permissions).map((p) => ({
             module: p.module,
             actionId: p.actionId,
           })),
@@ -406,7 +437,7 @@ export async function updateRole(roleId: string, input: UpdateRoleInput) {
           isDefault: input.isDefault,
           permissions: input.permissions
             ? {
-                create: input.permissions.map((p) => ({
+                create: dedupePermissions(input.permissions).map((p) => ({
                   module: p.module,
                   actionId: p.actionId,
                 })),
