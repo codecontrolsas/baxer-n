@@ -7,7 +7,7 @@ import { prisma } from '@/shared/lib/prisma';
 import { logger } from '@/shared/lib/logger';
 import { getActiveCompanyId } from '@/shared/lib/company';
 import { checkPermission, createAuditLog, AUDIT_ACTIONS, MODULES, ACTIONS } from '@/shared/lib/permissions';
-import { HIDDEN_MODULES } from '@/shared/lib/modules/constants';
+import { HIDDEN_MODULES, PERMISSION_MODULE_MAP } from '@/shared/lib/modules/constants';
 import type { DataTableSearchParams } from '@/shared/components/common/DataTable';
 import {
   parseSearchParams,
@@ -259,10 +259,17 @@ export async function getPermissionsConfig() {
   ];
 
   // Ocultar los permisos de los módulos ocultos en este despliegue (TSK-403 / TSK-377:
-  // Empleados, Equipos, Documentos). Se filtran esos módulos y sus submódulos, y se
-  // descartan los grupos que queden vacíos.
-  const isHiddenModule = (key: string): boolean =>
-    HIDDEN_MODULES.some((hidden) => key === hidden || key.startsWith(`${hidden}.`));
+  // Empleados, Equipos, Documentos) y de sus catálogos de configuración dependientes
+  // (ej. company.cost-centers → employees, company.vehicle-types → equipment), usando
+  // el mismo mapeo permiso→módulo del sistema. Se descartan los grupos que queden vacíos.
+  const resolveParentModule = (key: string) =>
+    PERMISSION_MODULE_MAP[key] ||
+    Object.entries(PERMISSION_MODULE_MAP).find(([prefix]) => key.startsWith(`${prefix}.`))?.[1];
+
+  const isHiddenModule = (key: string): boolean => {
+    const parent = resolveParentModule(key);
+    return parent ? HIDDEN_MODULES.includes(parent) : false;
+  };
 
   const visibleModuleGroups = moduleGroups
     .map((group) => ({ ...group, modules: group.modules.filter((m) => !isHiddenModule(m.key)) }))
