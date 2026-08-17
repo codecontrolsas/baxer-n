@@ -11,7 +11,7 @@ import { buildFiltersWhere, buildDateRangeFiltersWhere, parseSearchParams, state
 import { CREDIT_NOTE_TYPES, isCreditNote } from '@/modules/commercial/shared/voucher-utils';
 import moment from 'moment';
 import type { CreatePaymentOrderFormData, PartnerRepaymentFormData } from '../../shared/validators';
-import { partnerRepaymentSchema } from '../../shared/validators';
+import { partnerRepaymentSchema, FUNDS_MOVING_PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '../../shared/validators';
 import type { PendingPurchaseInvoice, PaymentOrderListItem, PaymentOrderWithDetails } from '../../shared/types';
 import { createJournalEntryForPaymentOrder } from '@/modules/accounting/features/integrations/commercial';
 import { checkPermission } from '@/shared/lib/permissions';
@@ -516,6 +516,14 @@ export async function confirmPaymentOrder(paymentOrderId: string) {
           continue;
         }
 
+        // Un pago que mueve fondos debe tener destino. Sin él la OP se confirmaría sin
+        // movimiento de caja/banco y sin asiento contable, desfasando el saldo en silencio.
+        if (FUNDS_MOVING_PAYMENT_METHODS.includes(payment.paymentMethod) && !payment.cashRegisterId && !payment.bankAccountId) {
+          throw new Error(
+            `El pago con ${PAYMENT_METHOD_LABELS[payment.paymentMethod]} no tiene caja ni cuenta bancaria asignada. Corregí la forma de pago antes de confirmar.`
+          );
+        }
+
         if (payment.cashRegisterId) {
           // Obtener sesión activa de la caja
           const activeSession = await tx.cashRegisterSession.findFirst({
@@ -554,39 +562,42 @@ export async function confirmPaymentOrder(paymentOrderId: string) {
               },
             },
           });
-        } else if (payment.bankAccountId && payment.paymentMethod !== 'ECHEQ') {
-          // Movimiento bancario (WITHDRAWAL). El e-cheq NO debita el saldo hasta que el cheque se debita/cobra.
+        } else if (payment.bankAccountId && FUNDS_MOVING_PAYMENT_METHODS.includes(payment.paymentMethod)) {
+          // Movimiento bancario (WITHDRAWAL). Sólo para medios que debitan de inmediato: el cheque
+          // propio y el e-cheq no descuentan saldo al emitirse, sino cuando se cobran/debitan.
           const bankAccount = await tx.bankAccount.findUnique({
             where: { id: payment.bankAccountId },
             select: { balance: true },
           });
 
-          if (bankAccount) {
-            await tx.bankMovement.create({
-              data: {
-                companyId,
-                bankAccountId: payment.bankAccountId,
-                type: 'WITHDRAWAL',
-                amount: payment.amount,
-                date: paymentOrder.date,
-                description: `Pago de ${paymentOrder.fullNumber}`,
-                reference: paymentOrder.fullNumber,
-                paymentOrderId,
-                reconciled: true,
-                reconciledAt: new Date(),
-                reconciledBy: userId,
-                createdBy: userId,
-              },
-            });
-
-            // Actualizar saldo (restar)
-            await tx.bankAccount.update({
-              where: { id: payment.bankAccountId },
-              data: {
-                balance: bankAccount.balance.sub(payment.amount),
-              },
-            });
+          if (!bankAccount) {
+            throw new Error('La cuenta bancaria del pago no existe. Corregí la forma de pago antes de confirmar.');
           }
+
+          await tx.bankMovement.create({
+            data: {
+              companyId,
+              bankAccountId: payment.bankAccountId,
+              type: 'WITHDRAWAL',
+              amount: payment.amount,
+              date: paymentOrder.date,
+              description: `Pago de ${paymentOrder.fullNumber}`,
+              reference: paymentOrder.fullNumber,
+              paymentOrderId,
+              reconciled: true,
+              reconciledAt: new Date(),
+              reconciledBy: userId,
+              createdBy: userId,
+            },
+          });
+
+          // Actualizar saldo (restar)
+          await tx.bankAccount.update({
+            where: { id: payment.bankAccountId },
+            data: {
+              balance: bankAccount.balance.sub(payment.amount),
+            },
+          });
         }
 
         // 3b. Cheque o e-cheq como medio de pago

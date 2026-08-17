@@ -33,6 +33,7 @@ import { BudgetStatus, AccountNature } from '@/generated/prisma/enums';
 import { prisma } from '@/shared/lib/prisma';
 import { logger } from '@/shared/lib/logger';
 import { isCreditNote } from '@/modules/commercial/shared/voucher-utils';
+import { resolveReceiptPaymentAccountId } from './payment-accounts';
 
 // Tipo para el cliente de transacción de Prisma
 type PrismaTransactionClient = Omit<
@@ -548,6 +549,7 @@ export async function createJournalEntryForReceipt(
         payments: {
           select: {
             amount: true,
+            paymentMethod: true,
             cashRegisterId: true,
             bankAccountId: true,
             cashRegister: { select: { accountId: true } },
@@ -579,36 +581,44 @@ export async function createJournalEntryForReceipt(
       customerId: receipt.customerId,
     });
 
-    // Debe: Caja/Banco (activo aumenta)
+    // Debe: Caja / Banco / Valores a Depositar (activo aumenta)
     for (const payment of receipt.payments) {
       const amount = parseFloat(payment.amount.toString());
-      let accountId: string | null = null;
+      const isCheck = payment.paymentMethod === 'CHECK' || payment.paymentMethod === 'ECHEQ';
 
-      if (payment.cashRegisterId && payment.cashRegister?.accountId) {
-        accountId = payment.cashRegister.accountId;
-      } else if (payment.bankAccountId && payment.bankAccount?.accountId) {
-        accountId = payment.bankAccount.accountId;
-      } else if (payment.cashRegisterId && settings.defaultCashAccountId) {
-        accountId = settings.defaultCashAccountId;
-      } else if (payment.bankAccountId && settings.defaultBankAccountId) {
-        accountId = settings.defaultBankAccountId;
-      }
+      const accountId = resolveReceiptPaymentAccountId(
+        {
+          paymentMethod: payment.paymentMethod,
+          cashRegisterId: payment.cashRegisterId,
+          bankAccountId: payment.bankAccountId,
+          cashRegisterAccountId: payment.cashRegister?.accountId,
+          bankAccountAccountId: payment.bankAccount?.accountId,
+        },
+        settings
+      );
 
       if (!accountId) {
         logger.warn('No se encontró cuenta contable para el pago', {
-          data: { receiptId, paymentCashRegisterId: payment.cashRegisterId, paymentBankAccountId: payment.bankAccountId },
+          data: {
+            receiptId,
+            paymentMethod: payment.paymentMethod,
+            paymentCashRegisterId: payment.cashRegisterId,
+            paymentBankAccountId: payment.bankAccountId,
+          },
         });
         continue;
       }
 
-      lines.push({
-        accountId,
-        debit: amount,
-        credit: 0,
-        description: payment.cashRegisterId
-          ? `Cobro en efectivo - ${receipt.fullNumber}`
-          : `Cobro bancario - ${receipt.fullNumber}`,
-      });
+      let description: string;
+      if (isCheck) {
+        description = `Valores a depositar - ${receipt.fullNumber}`;
+      } else if (payment.cashRegisterId) {
+        description = `Cobro en efectivo - ${receipt.fullNumber}`;
+      } else {
+        description = `Cobro bancario - ${receipt.fullNumber}`;
+      }
+
+      lines.push({ accountId, debit: amount, credit: 0, description });
     }
 
     // Debe: Retenciones Sufridas (activo, crédito fiscal)
@@ -632,8 +642,17 @@ export async function createJournalEntryForReceipt(
     }
 
     if (lines.length < 2) {
+      // Sin contrapartida no hay asiento posible: casi siempre falta configurar la cuenta
+      // contable del medio de pago (caja, banco o valores a depositar)
       logger.warn('No se pudieron crear líneas suficientes para el recibo', {
-        data: { receiptId },
+        data: {
+          receiptId,
+          lineasGeneradas: lines.length,
+          metodosDePago: receipt.payments.map((p) => p.paymentMethod),
+          faltaCuentaValoresADepositar: !settings.checksReceivedAccountId,
+          faltaCuentaBancoPorDefecto: !settings.defaultBankAccountId,
+          faltaCuentaCajaPorDefecto: !settings.defaultCashAccountId,
+        },
       });
       return null;
     }

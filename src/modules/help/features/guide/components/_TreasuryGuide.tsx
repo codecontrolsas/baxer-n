@@ -276,8 +276,8 @@ export function _TreasuryGuide() {
             <li>
               Agrega las <strong>formas de pago</strong>:
               <ul className="list-disc pl-6 mt-1 space-y-1">
-                <li>Efectivo (asociar caja)</li>
-                <li>Transferencia (asociar cuenta bancaria)</li>
+                <li>Efectivo (la caja es obligatoria)</li>
+                <li>Transferencia (la cuenta bancaria es obligatoria)</li>
                 <li>
                   Cheque (indicar número, banco emisor, emisor/librador, fecha de
                   emisión y fecha de vencimiento)
@@ -286,13 +286,29 @@ export function _TreasuryGuide() {
                   E-Cheq (mismos datos del cheque, más la cuenta de depósito donde
                   ingresó el e-cheq)
                 </li>
-                <li>Tarjeta de débito/crédito (últimos 4 dígitos)</li>
+                <li>
+                  Tarjeta de débito (últimos 4 dígitos y la cuenta bancaria donde
+                  se acredita, obligatoria)
+                </li>
+                <li>Tarjeta de crédito (últimos 4 dígitos y cantidad de cuotas)</li>
               </ul>
               <p className="text-sm text-muted-foreground mt-1">
                 Al confirmar el recibo, los cheques y e-cheq se registran
                 automáticamente en <strong>Tesorería → Cheques</strong> en estado
                 "En cartera", con sus fechas reales. Podés corregir sus datos
                 desde allí mientras sigan en cartera.
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Un cobro con cheque o e-cheq <strong>no suma saldo al banco</strong>:
+                el dinero recién entra a la cuenta cuando depositás el cheque desde
+                <strong> Tesorería → Cheques</strong>. Hasta entonces figura como
+                valores a depositar.
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Si el cobro entra a una caja o a un banco, el sistema no te deja
+                guardar el recibo sin indicar cuál. Es lo que permite que al
+                confirmarlo se genere el movimiento en la cuenta y el asiento
+                contable correspondiente.
               </p>
             </li>
             <li>
@@ -358,6 +374,11 @@ export function _TreasuryGuide() {
                   pasa a estado "Endosado" a nombre del proveedor
                 </li>
               </ul>
+              <p className="text-sm text-muted-foreground mt-1">
+                Pagar con cheque <strong>no descuenta saldo del banco</strong> al
+                confirmar la orden: el dinero sale de la cuenta cuando el cheque se
+                cobra o se debita.
+              </p>
             </li>
             <li>
               Agrega <strong>retenciones</strong> si corresponde

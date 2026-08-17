@@ -422,10 +422,34 @@ function refineCheckPayment(
   }
 }
 
+// Validaciones del destino de los fondos: si el pago mueve dinero, debe indicar a qué caja o
+// cuenta bancaria impacta. Sin esto el documento se confirma sin generar el movimiento de
+// caja/banco ni el asiento contable, y el saldo queda desfasado en silencio.
+function refineFundsDestination(
+  data: { paymentMethod: string; cashRegisterId?: string | null; bankAccountId?: string | null },
+  ctx: z.RefinementCtx,
+  options: { requireBankForDebitCard?: boolean } = {}
+) {
+  if (data.paymentMethod === 'CASH' && !data.cashRegisterId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['cashRegisterId'], message: 'Debe seleccionar la caja' });
+  }
+
+  // CHECK va a cartera, CREDIT_CARD impacta recién en la liquidación y ACCOUNT no mueve fondos.
+  // El e-cheq ya exige su cuenta de depósito en refineCheckPayment.
+  const requiresBankAccount =
+    data.paymentMethod === 'TRANSFER' || (options.requireBankForDebitCard === true && data.paymentMethod === 'DEBIT_CARD');
+
+  if (requiresBankAccount && !data.bankAccountId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['bankAccountId'], message: 'Debe seleccionar la cuenta bancaria' });
+  }
+}
+
 // Schema para pago de recibo (forma de pago) — el emisor del cheque (cliente o tercero) es requerido
-export const receiptPaymentSchema = z
-  .object(basePaymentFields)
-  .superRefine((data, ctx) => refineCheckPayment(data, ctx, { requireDrawer: true }));
+export const receiptPaymentSchema = z.object(basePaymentFields).superRefine((data, ctx) => {
+  refineCheckPayment(data, ctx, { requireDrawer: true });
+  // En un cobro, la tarjeta de débito acredita siempre en una cuenta de la empresa
+  refineFundsDestination(data, ctx, { requireBankForDebitCard: true });
+});
 
 // Schema para crear recibo
 export const createReceiptSchema = z
@@ -465,6 +489,11 @@ export type CreateReceiptFormData = z.infer<typeof createReceiptSchema>;
 // ====================================
 // LABELS Y MAPPERS - RECEIPTS
 // ====================================
+
+// Métodos de pago que mueven fondos al confirmar el documento y por lo tanto exigen una caja o
+// una cuenta bancaria de destino. CHECK va a cartera, CREDIT_CARD impacta en la liquidación,
+// ACCOUNT no mueve dinero y ECHEQ no acredita hasta que el cheque se cobra.
+export const FUNDS_MOVING_PAYMENT_METHODS: readonly string[] = ['CASH', 'TRANSFER', 'DEBIT_CARD'];
 
 export const PAYMENT_METHOD_LABELS = {
   CASH: 'Efectivo',
@@ -528,6 +557,9 @@ export const paymentOrderPaymentSchema = z
   .superRefine((data, ctx) => {
     refineCheckPayment(data, ctx, { requireDrawer: false, allowOwnership: true });
     refineCardPayment(data, ctx);
+    // La tarjeta de débito puede ser de un socio (el dinero no sale del banco de la empresa,
+    // se genera una cuota a devolverle), por eso acá no se exige cuenta bancaria
+    refineFundsDestination(data, ctx, { requireBankForDebitCard: false });
   });
 
 // Schema para crear orden de pago
