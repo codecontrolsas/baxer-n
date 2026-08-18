@@ -7,7 +7,7 @@ import { logger } from '@/shared/lib/logger';
 import { checkPermission } from '@/shared/lib/permissions';
 import { revalidatePath } from 'next/cache';
 import ExcelJS from 'exceljs';
-import moment from 'moment';
+import { parseImportedDate } from '@/shared/utils/import-dates';
 import type { VoucherType, SupplierTaxCondition, InvoiceLineType } from '@/generated/prisma/enums';
 
 // Mapeo de códigos AFIP a VoucherType del sistema
@@ -39,11 +39,8 @@ function parseCellValue(cellValue: ExcelJS.CellValue): string {
 }
 
 function parseDateValue(cellValue: ExcelJS.CellValue): Date | null {
-  if (!cellValue) return null;
-  if (cellValue instanceof Date) return cellValue;
-  const str = String(cellValue).trim();
-  const parsed = moment(str, ['DD/MM/YYYY', 'YYYY-MM-DD'], true);
-  return parsed.isValid() ? parsed.toDate() : null;
+  // Delega en el helper compartido para que la fecha quede en el mismo huso que el alta manual
+  return parseImportedDate(cellValue as Date | string | number | null);
 }
 
 function parseNumber(cellValue: ExcelJS.CellValue): number {
