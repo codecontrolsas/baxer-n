@@ -21,7 +21,7 @@ import {
   openingSalesInvoiceSchema,
   openingPurchaseInvoiceSchema,
 } from './validators';
-import moment from 'moment';
+import { parseImportedDate } from '@/shared/utils/import-dates';
 import { revalidatePath } from 'next/cache';
 
 const OPENING_ENTRY_DESCRIPTION = 'Asiento de Apertura';
@@ -903,29 +903,13 @@ export async function importOpeningSalesInvoicesFromExcel(
         return;
       }
 
-      let issueDate: Date;
-      if (fechaEmisionValue instanceof Date) {
-        issueDate = fechaEmisionValue;
-      } else {
-        const parsed = moment(String(fechaEmisionValue), ['DD/MM/YYYY', 'YYYY-MM-DD'], true);
-        if (!parsed.isValid()) {
-          errors.push(`Fila ${rowNumber}: Fecha de emisión inválida`);
-          return;
-        }
-        issueDate = parsed.toDate();
+      const issueDate = parseImportedDate(fechaEmisionValue as Date | string | number | null);
+      if (!issueDate) {
+        errors.push(`Fila ${rowNumber}: Fecha de emisión inválida`);
+        return;
       }
 
-      let dueDate: Date | null = null;
-      if (fechaVencValue) {
-        if (fechaVencValue instanceof Date) {
-          dueDate = fechaVencValue;
-        } else {
-          const parsed = moment(String(fechaVencValue), ['DD/MM/YYYY', 'YYYY-MM-DD'], true);
-          if (parsed.isValid()) {
-            dueDate = parsed.toDate();
-          }
-        }
-      }
+      const dueDate = parseImportedDate(fechaVencValue as Date | string | number | null);
 
       rows.push({
         customerId: client.id,
@@ -1054,29 +1038,13 @@ export async function importOpeningPurchaseInvoicesFromExcel(
         return;
       }
 
-      let issueDate: Date;
-      if (fechaEmisionValue instanceof Date) {
-        issueDate = fechaEmisionValue;
-      } else {
-        const parsed = moment(String(fechaEmisionValue), ['DD/MM/YYYY', 'YYYY-MM-DD'], true);
-        if (!parsed.isValid()) {
-          errors.push(`Fila ${rowNumber}: Fecha de emisión inválida`);
-          return;
-        }
-        issueDate = parsed.toDate();
+      const issueDate = parseImportedDate(fechaEmisionValue as Date | string | number | null);
+      if (!issueDate) {
+        errors.push(`Fila ${rowNumber}: Fecha de emisión inválida`);
+        return;
       }
 
-      let dueDate: Date | null = null;
-      if (fechaVencValue) {
-        if (fechaVencValue instanceof Date) {
-          dueDate = fechaVencValue;
-        } else {
-          const parsed = moment(String(fechaVencValue), ['DD/MM/YYYY', 'YYYY-MM-DD'], true);
-          if (parsed.isValid()) {
-            dueDate = parsed.toDate();
-          }
-        }
-      }
+      const dueDate = parseImportedDate(fechaVencValue as Date | string | number | null);
 
       rows.push({
         supplierId: supplier.id,

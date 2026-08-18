@@ -8,7 +8,7 @@ import { Prisma } from '@/generated/prisma/client';
 import { BankMovementType } from '@/generated/prisma/enums';
 import { revalidatePath } from 'next/cache';
 import ExcelJS from 'exceljs';
-import moment from 'moment';
+import { excelCellToDateString, isValidImportDate, parseImportedDate } from '@/shared/utils/import-dates';
 import { generateBankMovementsTemplate, VALID_MOVEMENT_TYPES } from './excel-template';
 
 /**
@@ -51,8 +51,7 @@ function validateMovementRow(row: {
   if (!row.date || row.date.trim() === '') {
     errors.push('La fecha es obligatoria');
   } else {
-    const parsedDate = moment(row.date, ['DD/MM/YYYY', 'YYYY-MM-DD', 'MM/DD/YYYY'], true);
-    if (!parsedDate.isValid()) {
+    if (!isValidImportDate(row.date)) {
       errors.push(`Fecha inválida: "${row.date}". Use el formato DD/MM/YYYY`);
     }
   }
@@ -94,21 +93,6 @@ function validateMovementRow(row: {
   }
 
   return { valid: errors.length === 0, errors };
-}
-
-/**
- * Parsea un valor de celda Excel como fecha
- */
-function parseDateValue(cellValue: ExcelJS.CellValue): string {
-  if (!cellValue) return '';
-
-  // Si es un objeto Date (Excel puede devolver fechas como objetos Date)
-  if (cellValue instanceof Date) {
-    return moment(cellValue).format('DD/MM/YYYY');
-  }
-
-  // Si es un string
-  return String(cellValue).trim();
 }
 
 /**
@@ -182,7 +166,7 @@ export async function importBankMovementsFromExcel(bankAccountId: string, fileBu
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return; // Saltar encabezado
 
-      const dateStr = parseDateValue(row.getCell(1).value);
+      const dateStr = excelCellToDateString(row.getCell(1).value as Date | string | number | null);
       const type = parseCellValue(row.getCell(2).value);
       const amountStr = parseCellValue(row.getCell(3).value);
       const description = parseCellValue(row.getCell(4).value);
@@ -208,11 +192,15 @@ export async function importBankMovementsFromExcel(bankAccountId: string, fileBu
         return;
       }
 
-      // Parsear fecha
-      const parsedDate = moment(dateStr, ['DD/MM/YYYY', 'YYYY-MM-DD', 'MM/DD/YYYY'], true);
+      // Parsear fecha (medianoche de Argentina, igual que el alta manual)
+      const parsedDate = parseImportedDate(dateStr);
+      if (!parsedDate) {
+        errors.push({ row: rowNumber, errors: [`Fecha inválida: "${dateStr}"`] });
+        return;
+      }
 
       movementsToImport.push({
-        date: parsedDate.toDate(),
+        date: parsedDate,
         type: rowData.type as BankMovementType,
         amount: parseFloat(amountStr),
         description,

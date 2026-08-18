@@ -116,6 +116,8 @@ export async function generateBankMovementsTemplate(): Promise<Buffer> {
         'Use el formato DD/MM/YYYY (día/mes/año)',
         'Ejemplo: 15/03/2025 para el 15 de marzo de 2025',
         'También se acepta el formato de fecha de Excel (celda con formato fecha)',
+        'IMPORTANTE: cargue la fecha real del movimiento, tal como figura en el extracto.',
+        'No sume ni reste días para compensar: el sistema respeta la fecha del archivo.',
       ],
     },
     {

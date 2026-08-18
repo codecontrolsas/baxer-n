@@ -14,6 +14,7 @@ import {
   Receipt,
   Trash2,
   TrendingUp,
+  Upload,
   Vault,
 } from 'lucide-react';
 
@@ -164,6 +165,48 @@ export function _TreasuryGuide() {
             incluye fecha, tipo, descripción, referencia, monto, estado de
             conciliación y documento vinculado.
           </p>
+        </CardContent>
+      </Card>
+
+      {/* Importar Movimientos desde Excel */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5" />
+            Importar Movimientos desde Excel
+          </CardTitle>
+          <CardDescription>
+            Carga el extracto bancario completo en un solo paso
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ol className="list-decimal pl-6 space-y-2 text-muted-foreground">
+            <li>
+              Ve al <strong>detalle de la cuenta bancaria</strong> y haz clic en{' '}
+              <strong>Importar Excel</strong>
+            </li>
+            <li>
+              Descarga la <strong>plantilla</strong>: trae una hoja de ejemplo y
+              otra con las instrucciones de cada columna
+            </li>
+            <li>
+              Completa una fila por movimiento: fecha, tipo, monto, descripción y,
+              opcionalmente, referencia y número de extracto
+            </li>
+            <li>Sube el archivo completo y confirma la importación</li>
+          </ol>
+          <p className="text-sm text-muted-foreground">
+            Si alguna fila tiene un error, se te informa el número de fila y el
+            motivo, y esa fila no se importa.
+          </p>
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Cargá la <strong>fecha real</strong> de cada movimiento, tal como
+              figura en el extracto. No sumes ni restes días para compensar: el
+              sistema respeta exactamente la fecha del archivo.
+            </AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
 
