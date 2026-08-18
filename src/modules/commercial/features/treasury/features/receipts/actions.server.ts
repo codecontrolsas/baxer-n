@@ -15,6 +15,7 @@ import {
 } from '@/shared/components/common/DataTable/helpers';
 import { CREDIT_NOTE_TYPES, isCreditNote } from '@/modules/commercial/shared/voucher-utils';
 import type { CreateReceiptFormData } from '../../shared/validators';
+import { FUNDS_MOVING_PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '../../shared/validators';
 import type { PendingInvoice, ReceiptListItem, ReceiptWithDetails } from '../../shared/types';
 import { createJournalEntryForReceipt } from '@/modules/accounting/features/integrations/commercial';
 import { checkPermission } from '@/shared/lib/permissions';
@@ -288,6 +289,14 @@ export async function confirmReceipt(receiptId: string) {
 
       // 3. Crear movimientos de caja/banco según formas de pago
       for (const payment of receipt.payments) {
+        // Un pago que mueve fondos debe tener destino. Sin él el recibo se confirmaría sin
+        // movimiento de caja/banco y sin asiento contable, desfasando el saldo en silencio.
+        if (FUNDS_MOVING_PAYMENT_METHODS.includes(payment.paymentMethod) && !payment.cashRegisterId && !payment.bankAccountId) {
+          throw new Error(
+            `El cobro con ${PAYMENT_METHOD_LABELS[payment.paymentMethod]} no tiene caja ni cuenta bancaria asignada. Corregí la forma de pago antes de confirmar.`
+          );
+        }
+
         if (payment.cashRegisterId) {
           // Obtener sesión activa de la caja
           const activeSession = await tx.cashRegisterSession.findFirst({
@@ -326,39 +335,42 @@ export async function confirmReceipt(receiptId: string) {
               },
             },
           });
-        } else if (payment.bankAccountId && payment.paymentMethod !== 'ECHEQ') {
-          // Movimiento bancario (el e-cheq NO acredita el saldo hasta que se cobra/acredita el cheque)
+        } else if (payment.bankAccountId && FUNDS_MOVING_PAYMENT_METHODS.includes(payment.paymentMethod)) {
+          // Movimiento bancario. Sólo para medios que acreditan de inmediato: ni el cheque ni el
+          // e-cheq suman saldo al cobrarse, van a cartera y recién impactan el banco al depositarse.
           const bankAccount = await tx.bankAccount.findUnique({
             where: { id: payment.bankAccountId },
             select: { balance: true },
           });
 
-          if (bankAccount) {
-            await tx.bankMovement.create({
-              data: {
-                companyId,
-                bankAccountId: payment.bankAccountId,
-                type: 'DEPOSIT',
-                amount: payment.amount,
-                date: receipt.date,
-                description: `Cobro de ${receipt.fullNumber}`,
-                reference: receipt.fullNumber,
-                receiptId,
-                reconciled: true,
-                reconciledAt: new Date(),
-                reconciledBy: userId,
-                createdBy: userId,
-              },
-            });
-
-            // Actualizar saldo
-            await tx.bankAccount.update({
-              where: { id: payment.bankAccountId },
-              data: {
-                balance: bankAccount.balance.add(payment.amount),
-              },
-            });
+          if (!bankAccount) {
+            throw new Error('La cuenta bancaria del cobro no existe. Corregí la forma de pago antes de confirmar.');
           }
+
+          await tx.bankMovement.create({
+            data: {
+              companyId,
+              bankAccountId: payment.bankAccountId,
+              type: 'DEPOSIT',
+              amount: payment.amount,
+              date: receipt.date,
+              description: `Cobro de ${receipt.fullNumber}`,
+              reference: receipt.fullNumber,
+              receiptId,
+              reconciled: true,
+              reconciledAt: new Date(),
+              reconciledBy: userId,
+              createdBy: userId,
+            },
+          });
+
+          // Actualizar saldo
+          await tx.bankAccount.update({
+            where: { id: payment.bankAccountId },
+            data: {
+              balance: bankAccount.balance.add(payment.amount),
+            },
+          });
         }
 
         // 3b. Si el pago es con cheque o e-cheq, crear registro Check como THIRD_PARTY en PORTFOLIO
